@@ -10,22 +10,105 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700&family=Teko:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
+      :root {
+        --color-bg: #1a0202;
+        --color-panel-bg: #4c0d1b;
+        --color-panel-darker-bg: #3b0a15;
+        --color-border-gold: #c28a2a;
+        --color-text-gold: #f2d47a;
+        --color-text-dark-gold: #c28a2a;
+        --color-red-main: #9f1239;
+        --color-red-light: #f43f5e;
+        --color-blue-main: #0c4a6e;
+        --color-blue-light: #38bdf8;
+      }
       body {
         font-family: 'Roboto Condensed', sans-serif;
+        background-color: var(--color-bg);
+        background-image: radial-gradient(circle at top right, rgba(159, 18, 57, 0.4) 0%, transparent 40%),
+                          radial-gradient(circle at bottom left, rgba(12, 74, 110, 0.3) 0%, transparent 50%);
       }
       .font-teko {
         font-family: 'Teko', sans-serif;
       }
+      .text-gold {
+        color: var(--color-text-gold);
+        text-shadow: 0px 1px 3px rgba(0,0,0,0.5);
+      }
+      .text-dark-gold {
+        color: var(--color-text-dark-gold);
+      }
+      .border-gold {
+        border-color: var(--color-border-gold);
+      }
+      .panel-shadow {
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5), inset 0 2px 2px rgba(255,255,255,0.1);
+      }
+      .chip-button {
+        background: var(--color-panel-darker-bg);
+        border: 2px solid var(--color-border-gold);
+        color: var(--color-text-gold);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+        transition: all 0.2s ease;
+      }
+      .chip-button:hover {
+        background: #5f1023;
+        transform: translateY(-2px);
+      }
+      .action-button {
+        border-radius: 9999px;
+        padding: 0.75rem 2rem;
+        font-family: 'Teko', sans-serif;
+        font-size: 1.5rem;
+        text-transform: uppercase;
+        color: white;
+        border: 2px solid;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        transition: all 0.2s ease;
+      }
+      .action-button:hover {
+        transform: scale(1.05);
+      }
+      .action-button:active {
+        transform: scale(0.95);
+      }
+      .action-button-primary {
+        background-image: linear-gradient(to top, #b45309, #d97706);
+        border-color: #f59e0b;
+      }
+      .action-button-secondary {
+        background-image: linear-gradient(to top, #581c87, #7e22ce);
+        border-color: #a855f7;
+      }
+       .action-button-cancel {
+        background-image: linear-gradient(to top, #44403c, #57534e);
+        border-color: #78716c;
+      }
+
       @keyframes tumble {
-        0% { transform: rotate(0deg) scale(0.8); }
-        25% { transform: rotate(90deg) scale(1.1) translateX(10px); }
-        50% { transform: rotate(180deg) scale(1) translateY(-10px); }
-        75% { transform: rotate(270deg) scale(0.9) translateX(-5px); }
-        100% { transform: rotate(360deg) scale(1); }
+        0% { transform: rotate3d(1, 1, 0, 0deg) scale(0.8); }
+        100% { transform: rotate3d(1, 1, 0, 360deg) scale(1); }
       }
       .animate-tumble {
-          animation: tumble 0.5s linear infinite;
+          animation: tumble 0.7s ease-in-out infinite;
       }
+
+      @keyframes reveal {
+        from { transform: translateY(20px) scale(0.8); opacity: 0; }
+        to { transform: translateY(0) scale(1); opacity: 1; }
+      }
+      .animate-reveal {
+        animation: reveal 0.4s ease-out forwards;
+      }
+      
+      @keyframes lift-up {
+        from { transform: translateY(0) scale(1); opacity: 1; }
+        to { transform: translateY(-50px) scale(1.1); opacity: 0; }
+      }
+      .animate-lift-up {
+        animation: lift-up 0.5s ease-in-out forwards;
+      }
+
       @keyframes fadeIn {
         from { opacity: 0; }
         to { opacity: 1; }

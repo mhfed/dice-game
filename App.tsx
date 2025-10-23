@@ -1,30 +1,39 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Dice } from './components/Dice';
 import { HistoryTracker, HistoryEntry } from './components/HistoryTracker';
 import { Modal } from './components/Modal';
 
-const BET_AMOUNTS = [100, 500, 1000, 5000];
-const INITIAL_BALANCE = 10000;
-const WIN_STREAK_THRESHOLD = 3;
-const WIN_STREAK_BONUS_PERCENT = 0.2;
-const LOSS_STREAK_THRESHOLD = 5;
-const LOSS_STREAK_RECOVERY_AMOUNT = 500;
+const BET_AMOUNTS = [1000, 10000, 50000, 100000, 500000, 1000000];
+const INITIAL_BALANCE = 20000000;
+
+// Placeholder component for icons
+const Icon = ({ path, className = 'w-6 h-6' }: { path: string, className?: string }) => (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d={path} /></svg>
+);
 
 const App: React.FC = () => {
     const [diceValues, setDiceValues] = useState([1, 2, 3]);
     const [isRolling, setIsRolling] = useState(false);
     const [balance, setBalance] = useState<number>(INITIAL_BALANCE);
-    const [betAmount, setBetAmount] = useState<number>(100);
-    const [currentBet, setCurrentBet] = useState<'tai' | 'xiu' | null>(null);
+    const [betAmount, setBetAmount] = useState<number>(0);
+    const [selectedSide, setSelectedSide] = useState<'tai' | 'xiu' | null>(null);
+    const [confirmedBet, setConfirmedBet] = useState<{ side: 'tai' | 'xiu'; amount: number } | null>(null);
+    
+    const [isCovered, setIsCovered] = useState(false);
+    const [isRevealing, setIsRevealing] = useState(false);
     const [history, setHistory] = useState<HistoryEntry[]>([]);
-    const [winStreak, setWinStreak] = useState(0);
-    const [lossStreak, setLossStreak] = useState(0);
+    
+    const [gameId, setGameId] = useState(365586);
+    const [totalTai, setTotalTai] = useState(873724316);
+    const [totalXiu, setTotalXiu] = useState(854348318);
+    const [resultTotal, setResultTotal] = useState<number | null>(null);
 
-    // Modal State
+    // State for deposit/withdraw modal
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [modalContent, setModalContent] = useState({ title: '', body: '' });
-    const [modalType, setModalType] = useState<'result' | 'deposit' | 'withdraw' | null>(null);
-    const [transactionAmount, setTransactionAmount] = useState('');
+    const [modalMode, setModalMode] = useState<'deposit' | 'withdraw'>('deposit');
+    const [modalAmount, setModalAmount] = useState(0);
+    const [modalMessage, setModalMessage] = useState('');
+
 
     const playSound = useCallback((id: string) => {
         const audio = document.getElementById(id) as HTMLAudioElement;
@@ -35,23 +44,25 @@ const App: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        const savedBalance = localStorage.getItem('taiXiuBalance');
-        const savedHistory = localStorage.getItem('taiXiuHistory');
-        if (savedBalance) {
-            setBalance(JSON.parse(savedBalance));
-        }
-        if (savedHistory) {
-            setHistory(JSON.parse(savedHistory));
-        }
+        const savedBalance = localStorage.getItem('taiXiuBalanceV2');
+        const savedHistory = localStorage.getItem('taiXiuHistoryV2');
+        if (savedBalance) setBalance(JSON.parse(savedBalance));
+        else setBalance(INITIAL_BALANCE);
+        if (savedHistory) setHistory(JSON.parse(savedHistory));
     }, []);
 
+    useEffect(() => { localStorage.setItem('taiXiuBalanceV2', JSON.stringify(balance)); }, [balance]);
+    useEffect(() => { localStorage.setItem('taiXiuHistoryV2', JSON.stringify(history)); }, [history]);
+    
+    // Simulate other players' bets
     useEffect(() => {
-        localStorage.setItem('taiXiuBalance', JSON.stringify(balance));
-    }, [balance]);
-
-    useEffect(() => {
-        localStorage.setItem('taiXiuHistory', JSON.stringify(history));
-    }, [history]);
+      if (isRolling) return;
+      const interval = setInterval(() => {
+        setTotalTai(prev => prev + Math.floor(Math.random() * 10000));
+        setTotalXiu(prev => prev + Math.floor(Math.random() * 10000));
+      }, 1500);
+      return () => clearInterval(interval);
+    }, [isRolling]);
 
     const getResult = (d1: number, d2: number, d3: number): { total: number; result: 'tai' | 'xiu' | 'triple' } => {
         const total = d1 + d2 + d3;
@@ -60,19 +71,49 @@ const App: React.FC = () => {
         return { total, result: 'tai' };
     };
 
-    const handleRoll = () => {
-        if (isRolling || !currentBet || betAmount <= 0 || betAmount > balance) {
-            if (!currentBet) setModalContent({ title: 'Lỗi', body: 'Vui lòng chọn TÀI hoặc XỈU trước khi lắc.' });
-            else if (betAmount > balance) setModalContent({ title: 'Lỗi', body: 'Số dư không đủ để đặt cược.'});
-            else setModalContent({ title: 'Lỗi', body: 'Số tiền cược không hợp lệ.'});
-            setModalType('result');
-            setIsModalOpen(true);
-            return;
+    const processResult = useCallback(() => {
+        if (!confirmedBet) return;
+
+        const { total, result } = getResult(diceValues[0], diceValues[1], diceValues[2]);
+        setResultTotal(total);
+        const playerWon = result === confirmedBet.side;
+
+        if (playerWon) {
+            const winnings = confirmedBet.amount * 2;
+            setBalance(prev => prev + winnings);
+            playSound('audio-win');
+        } else {
+            playSound('audio-lose');
         }
 
+        setHistory(prev => [{ id: Date.now(), total, result }, ...prev.slice(0, 19)]);
+        setConfirmedBet(null);
+        setBetAmount(0);
+        
+        setTimeout(() => {
+            setGameId(prev => prev + 1);
+            setResultTotal(null);
+        }, 3000); // Reset for next round after 3s
+    }, [diceValues, confirmedBet, playSound]);
+    
+    const handleBetSelection = (side: 'tai' | 'xiu') => {
+        if (confirmedBet) return;
+        setSelectedSide(side);
+        playSound('audio-click');
+    }
+
+    const handlePlaceBet = () => {
+        if (!selectedSide || betAmount <= 0 || betAmount > balance || confirmedBet) return;
+        
         setIsRolling(true);
         playSound('audio-roll');
+        
         setBalance(prev => prev - betAmount);
+        setConfirmedBet({ side: selectedSide, amount: betAmount });
+        if (selectedSide === 'tai') setTotalTai(prev => prev + betAmount);
+        else setTotalXiu(prev => prev + betAmount);
+
+        setSelectedSide(null);
 
         setTimeout(() => {
             const newDiceValues = [
@@ -81,164 +122,225 @@ const App: React.FC = () => {
                 Math.floor(Math.random() * 6) + 1
             ];
             setDiceValues(newDiceValues);
-
-            const { total, result } = getResult(newDiceValues[0], newDiceValues[1], newDiceValues[2]);
-            const playerWon = result === currentBet;
-
-            let resultMessage = `Kết quả: ${total} điểm - ${result.toUpperCase()}! Bạn đã ${playerWon ? 'Thắng' : 'Thua'}.`;
-            let bonusMessage = '';
-
-            if (playerWon) {
-                const winnings = betAmount * 2;
-                setBalance(prev => prev + winnings);
-                setWinStreak(prev => prev + 1);
-                setLossStreak(0);
-                playSound('audio-win');
-
-                if (winStreak + 1 === WIN_STREAK_THRESHOLD) {
-                    const bonus = Math.floor(betAmount * WIN_STREAK_BONUS_PERCENT);
-                    setBalance(prev => prev + bonus);
-                    bonusMessage = `\n\nNóng tay! Bạn nhận được thưởng chuỗi ${WIN_STREAK_THRESHOLD} ván thắng: ${bonus.toLocaleString()}!`;
-                }
-            } else {
-                setLossStreak(prev => prev + 1);
-                setWinStreak(0);
-                playSound('audio-lose');
-
-                if (lossStreak + 1 === LOSS_STREAK_THRESHOLD) {
-                    setBalance(prev => prev + LOSS_STREAK_RECOVERY_AMOUNT);
-                    bonusMessage = `\n\nĐừng nản lòng! Bạn được an ủi ${LOSS_STREAK_RECOVERY_AMOUNT.toLocaleString()} để lấy lại vận may!`;
-                }
-            }
-            
-            setHistory(prev => [{ id: Date.now(), total, result }, ...prev.slice(0, 19)]);
             setIsRolling(false);
-            setCurrentBet(null);
-            setModalContent({ title: 'Kết Quả Ván Cược', body: resultMessage + bonusMessage });
-            setModalType('result');
-            setIsModalOpen(true);
-
-        }, 1500);
+            setIsCovered(true);
+        }, 2000);
     };
 
-    const handleTransaction = (type: 'deposit' | 'withdraw') => {
-        const amount = parseInt(transactionAmount, 10);
-        if (isNaN(amount) || amount <= 0) return;
+    const handleReveal = () => {
+        if (!isCovered || isRevealing) return;
+        playSound('audio-click');
+        setIsRevealing(true); 
 
-        if (type === 'deposit') {
-            setBalance(prev => prev + amount);
-            setModalContent({ title: 'Giao Dịch Thành Công', body: `Tài khoản của bạn đã được cộng ${amount.toLocaleString()}. Chúc bạn may mắn!`});
-        } else {
-            if (amount > balance) {
-                setModalContent({ title: 'Giao Dịch Thất Bại', body: 'Số tiền rút không thể lớn hơn số dư hiện tại.' });
+        setTimeout(() => {
+            setIsCovered(false);
+            setIsRevealing(false);
+            processResult();
+        }, 500);
+    };
+
+    const handleCancel = () => {
+        if (confirmedBet) return;
+        setSelectedSide(null);
+        setBetAmount(0);
+        playSound('audio-click');
+    };
+    
+    const handleAllIn = () => {
+        if (confirmedBet) return;
+        setBetAmount(balance);
+        playSound('audio-click');
+    }
+
+    const handleChipSelect = (amount: number) => {
+        if (confirmedBet) return;
+        setBetAmount(prev => prev + amount);
+        playSound('audio-click');
+    }
+
+    // Modal Handlers
+    const openModal = (mode: 'deposit' | 'withdraw') => {
+        setModalMode(mode);
+        setModalAmount(0);
+        setModalMessage('');
+        setIsModalOpen(true);
+        playSound('audio-click');
+    };
+
+    const closeModal = () => {
+        setIsModalOpen(false);
+    };
+
+    const handleTransaction = () => {
+        playSound('audio-click');
+        if (modalMode === 'deposit') {
+            if (modalAmount > 0) {
+                setBalance(prev => prev + modalAmount);
+                setModalMessage(`Giao dịch thành công! ${modalAmount.toLocaleString()} đã được 'in' và thêm vào tài khoản của bạn.`);
+            }
+        } else { // withdraw
+            if (modalAmount <= 0) return;
+            if (modalAmount > balance) {
+                setModalMessage('Số dư không đủ để thực hiện giao dịch này!');
             } else {
-                setBalance(prev => prev - amount);
-                setModalContent({ title: 'Giao Dịch Thành Công', body: `Bạn đã rút ${amount.toLocaleString()} từ ngân hàng vũ trụ. Tiêu xài vui vẻ nhé!` });
+                setBalance(prev => prev - modalAmount);
+                setModalMessage(`Yêu cầu đã được gửi đến ngân hàng vũ trụ. Đùa thôi, bạn đã rút ${modalAmount.toLocaleString()}!`);
             }
         }
-        setTransactionAmount('');
-        setIsModalOpen(true);
-        setModalType('result'); // To show a simple message
-    };
-
-    const openTransactionModal = (type: 'deposit' | 'withdraw') => {
-        setModalType(type);
-        setIsModalOpen(true);
+        setModalAmount(0);
     };
 
     return (
-        <div className="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans selection:bg-yellow-500 selection:text-slate-900">
-            {/* Header */}
-            <header className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center bg-slate-900/50 backdrop-blur-sm">
-                <div className="text-left">
-                    <h1 className="text-3xl font-bold text-yellow-300 font-teko tracking-wider">TÀI XỈU</h1>
-                    <p className="text-slate-400 text-sm">Số dư: <span className="font-bold text-white text-base">{balance.toLocaleString()}</span></p>
+        <div className="text-white min-h-screen flex flex-col items-center justify-center p-2 sm:p-4 selection:bg-yellow-500 selection:text-slate-900 overflow-hidden">
+             {/* Main Betting Panel */}
+            <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#6b1427] to-[#4c0d1b] rounded-2xl border-2 border-gold panel-shadow p-4 sm:p-6">
+                {/* Header Icons */}
+                <div className="absolute top-4 left-6 flex gap-3 text-gold">
+                    <Icon path="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-7h2v5h-2v-5zm0-4h2v2h-2V7z" />
+                    <Icon path="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 7h2v2h-2zm0 4h2v6h-2z" />
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={() => openTransactionModal('deposit')} className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-md text-sm transition-colors">Nạp Tiền</button>
-                    <button onClick={() => openTransactionModal('withdraw')} className="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-md text-sm transition-colors">Rút Tiền</button>
-                </div>
-            </header>
-
-            <main className="flex flex-col items-center justify-center w-full mt-20">
-                <HistoryTracker history={history} />
-
-                {/* Dice Area */}
-                <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 p-8 rounded-full shadow-2xl mb-8 border-2 border-slate-700">
-                    <div className="absolute inset-0 bg-red-500 rounded-full blur-2xl opacity-20"></div>
-                    <div className="relative flex gap-6">
-                        {diceValues.map((value, index) => <Dice key={index} value={value} isRolling={isRolling} />)}
-                    </div>
+                 <div className="absolute top-4 right-6 flex gap-3 text-gold">
+                    <Icon path="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+                    <Icon path="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                 </div>
 
-                {/* Betting Controls */}
-                <div className="w-full max-w-md bg-slate-800/50 p-4 rounded-lg shadow-lg mb-6">
-                    <div className="mb-3">
-                         <label className="block text-center text-slate-400 mb-2">Số tiền cược</label>
-                         <input 
-                            type="number"
-                            value={betAmount}
-                            onChange={(e) => setBetAmount(Math.max(0, parseInt(e.target.value) || 0))}
-                            className="w-full bg-slate-900 text-white text-center text-xl p-2 rounded-md border border-slate-600 focus:ring-2 focus:ring-yellow-500 focus:outline-none"
-                         />
-                    </div>
-                    <div className="flex justify-center gap-2 mb-4">
-                        {BET_AMOUNTS.map(amount => (
-                            <button key={amount} onClick={() => setBetAmount(amount)} className="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-1 px-3 rounded-md text-xs transition-colors">
-                                {amount.toLocaleString()}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                         <button 
-                            onClick={() => { setCurrentBet('xiu'); playSound('audio-click'); }} 
-                            className={`py-4 rounded-lg text-2xl font-teko tracking-widest transition-all duration-200 ${currentBet === 'xiu' ? 'bg-sky-500 text-white ring-2 ring-offset-2 ring-offset-slate-900 ring-sky-400' : 'bg-slate-700 hover:bg-slate-600'}`}
-                        >
-                            XỈU
-                        </button>
-                        <button 
-                            onClick={() => { setCurrentBet('tai'); playSound('audio-click'); }}
-                            className={`py-4 rounded-lg text-2xl font-teko tracking-widest transition-all duration-200 ${currentBet === 'tai' ? 'bg-red-500 text-white ring-2 ring-offset-2 ring-offset-slate-900 ring-red-400' : 'bg-slate-700 hover:bg-slate-600'}`}
-                        >
-                            TÀI
-                        </button>
-                    </div>
+                {/* Title */}
+                <div className="text-center mb-4">
+                    <h1 className="text-5xl font-teko text-gold tracking-wider">TÀI XỈU</h1>
+                    <p className="font-semibold text-dark-gold">#{gameId}</p>
                 </div>
 
-                <button
-                    onClick={handleRoll}
-                    disabled={isRolling || !currentBet}
-                    className="bg-yellow-500 hover:bg-yellow-400 disabled:bg-slate-600 disabled:cursor-not-allowed text-slate-900 font-bold py-4 px-12 rounded-full text-xl shadow-lg transition-all duration-300 transform hover:scale-105 active:scale-95"
-                >
-                    {isRolling ? 'ĐANG LẮC...' : 'ĐẶT CƯỢC & LẮC'}
-                </button>
-            </main>
-            
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
-                {modalType === 'deposit' || modalType === 'withdraw' ? (
-                     <div>
-                        <h2 className="text-2xl font-bold mb-4 text-yellow-300">{modalType === 'deposit' ? 'Nạp Tiền' : 'Rút Tiền'}</h2>
-                        <p className="text-slate-300 mb-4">Nhập số tiền bạn muốn {modalType === 'deposit' ? 'nạp' : 'rút'}.</p>
-                        <input
-                            type="number"
-                            value={transactionAmount}
-                            onChange={(e) => setTransactionAmount(e.target.value)}
-                            className="w-full bg-slate-900 text-white text-center text-xl p-2 rounded-md border border-slate-600 focus:ring-2 focus:ring-yellow-500 focus:outline-none mb-4"
-                            placeholder="0"
+                {/* Main Content Area */}
+                <div className="grid grid-cols-3 gap-2 sm:gap-4 items-center">
+                    {/* TÀI Section */}
+                    <div 
+                        onClick={() => handleBetSelection('tai')}
+                        className={`cursor-pointer bg-black/20 rounded-lg p-3 sm:p-4 text-center transition-all duration-300 ${selectedSide === 'tai' ? 'border-2 border-red-400 shadow-lg' : 'border-2 border-transparent'}`}
+                    >
+                        <h2 className="text-6xl font-teko text-red-400" style={{textShadow: '0 0 10px #f43f5e'}}>TÀI</h2>
+                        <div className="bg-black/30 rounded py-1 px-2 mb-2">
+                            <span className="text-lg font-bold text-white">{totalTai.toLocaleString()}</span>
+                        </div>
+                    </div>
+
+                    {/* Center Section */}
+                    <div className="relative flex flex-col items-center">
+                        <div className="relative w-32 h-32 sm:w-40 sm:h-40 bg-black/30 rounded-full flex items-center justify-center border-2 border-gold shadow-inner">
+                            {resultTotal !== null ? (
+                                 <span className="font-teko text-8xl text-gold">{resultTotal}</span>
+                            ) : (
+                                <>
+                                  <div className={`relative flex gap-2 transition-opacity duration-300 ${isCovered ? 'opacity-0' : 'opacity-100'}`}>
+                                      {diceValues.map((value, index) =>
+                                          <Dice key={index} value={value} isRolling={isRolling} small />
+                                      )}
+                                  </div>
+                                  {isCovered && (
+                                      <div onClick={handleReveal} className={`absolute inset-0 flex items-center justify-center cursor-pointer ${isRevealing ? 'animate-lift-up' : ''}`}>
+                                        <svg width="100" height="100" viewBox="0 0 150 150" className="drop-shadow-lg">
+                                            <defs>
+                                                <radialGradient id="bowlGradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                                                    <stop offset="0%" stopColor="#c28a2a" />
+                                                    <stop offset="100%" stopColor="#855d1c" />
+                                                </radialGradient>
+                                            </defs>
+                                            <path d="M 10 75 A 65 65 0 0 1 140 75" fill="url(#bowlGradient)" stroke="#4a2e0a" strokeWidth="3" />
+                                            <path d="M 50 20 A 25 10 0 0 1 100 20" fill="#a16d1f" stroke="#4a2e0a" strokeWidth="2" />
+                                        </svg>
+                                      </div>
+                                  )}
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* XỈU Section */}
+                    <div 
+                        onClick={() => handleBetSelection('xiu')}
+                        className={`cursor-pointer bg-black/20 rounded-lg p-3 sm:p-4 text-center transition-all duration-300 ${selectedSide === 'xiu' ? 'border-2 border-sky-400 shadow-lg' : 'border-2 border-transparent'}`}
+                    >
+                        <h2 className="text-6xl font-teko text-sky-400" style={{textShadow: '0 0 10px #38bdf8'}}>XỈU</h2>
+                        <div className="bg-black/30 rounded py-1 px-2 mb-2">
+                             <span className="text-lg font-bold text-white">{totalXiu.toLocaleString()}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                 {/* Player Bet Input & History */}
+                <div className="relative bg-panel-darker-bg mt-[-20px] pt-6 pb-2 px-4 rounded-b-xl border-x-2 border-b-2 border-gold">
+                    <div className="bg-black/30 rounded-md p-1 flex items-center justify-between mb-3 mx-auto max-w-xs">
+                        <span className="text-dark-gold px-2">CƯỢC</span>
+                        <input 
+                            type="text" 
+                            value={betAmount.toLocaleString()} 
+                            readOnly 
+                            className="flex-grow bg-transparent text-white font-bold text-center text-lg p-1 focus:outline-none"
                         />
-                        <button 
-                            onClick={() => handleTransaction(modalType)}
-                            className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-bold py-2 px-4 rounded-md transition-colors"
-                        >
-                            Xác Nhận
+                        <button onClick={handleCancel} className="text-dark-gold px-2 font-bold">X</button>
+                    </div>
+                    <HistoryTracker history={history} />
+                </div>
+            </div>
+
+            {/* Bet Chips and Actions */}
+            <div className="w-full max-w-4xl mt-4">
+                 <div className="flex justify-center items-center gap-2 flex-wrap mb-4">
+                    {BET_AMOUNTS.map(amount => (
+                        <button key={amount} onClick={() => handleChipSelect(amount)} className="chip-button rounded-full font-bold px-3 py-1 text-sm sm:px-4 sm:py-2 sm:text-base">
+                            {amount / 1000}K
                         </button>
-                    </div>
-                ) : (
-                    <div>
-                        <h2 className="text-2xl font-bold mb-4 text-yellow-300">{modalContent.title}</h2>
-                        <p className="text-slate-300 whitespace-pre-wrap">{modalContent.body}</p>
-                    </div>
-                )}
+                    ))}
+                </div>
+                <div className="flex justify-center items-center gap-4">
+                    <button onClick={handleAllIn} disabled={!!confirmedBet} className="action-button action-button-secondary disabled:opacity-50">All-in</button>
+                    <button onClick={handlePlaceBet} disabled={!selectedSide || betAmount <= 0 || !!confirmedBet} className="action-button action-button-primary disabled:opacity-50">Đặt Cược</button>
+                    <button onClick={handleCancel} disabled={!!confirmedBet} className="action-button action-button-cancel disabled:opacity-50">Hủy</button>
+                </div>
+                 <div className="flex justify-center items-center gap-4 mt-4 text-dark-gold">
+                    <span>Số dư: <span className="font-bold text-gold text-lg">{balance.toLocaleString()}</span></span>
+                    <button onClick={() => openModal('deposit')} className="chip-button !text-xs !px-3 !py-1">Nạp</button>
+                    <button onClick={() => openModal('withdraw')} className="chip-button !text-xs !px-3 !py-1">Rút</button>
+                </div>
+            </div>
+
+            <Modal isOpen={isModalOpen} onClose={closeModal}>
+                <div className="text-center">
+                    <h2 className="font-teko text-3xl text-gold mb-4">
+                        {modalMode === 'deposit' ? 'NẠP TIỀN' : 'RÚT TIỀN'}
+                    </h2>
+                    {modalMessage ? (
+                        <div className="min-h-[150px] flex flex-col justify-center items-center">
+                          <p className="text-green-400 mb-4">{modalMessage}</p>
+                          <button onClick={closeModal} className="action-button action-button-cancel">Đóng</button>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="bg-black/30 rounded-md p-2 flex items-center justify-between mb-4">
+                                <span className="text-dark-gold px-2">SỐ TIỀN</span>
+                                <input 
+                                    type="number"
+                                    value={modalAmount === 0 ? '' : modalAmount}
+                                    onChange={(e) => setModalAmount(Number(e.target.value))}
+                                    placeholder="Nhập số tiền"
+                                    className="flex-grow bg-transparent text-white font-bold text-center text-lg p-1 focus:outline-none"
+                                />
+                            </div>
+                            <div className="flex justify-center items-center gap-2 flex-wrap mb-4">
+                                {[1000000, 5000000, 10000000, 50000000].map(amount => (
+                                    <button key={amount} onClick={() => setModalAmount(prev => prev + amount)} className="chip-button">
+                                        {amount / 1000000}M
+                                    </button>
+                                ))}
+                            </div>
+                            <button 
+                                onClick={handleTransaction} 
+                                className="action-button action-button-primary w-full"
+                            >
+                                XÁC NHẬN
+                            </button>
+                        </>
+                    )}
+                </div>
             </Modal>
         </div>
     );

@@ -4,6 +4,7 @@ import { DiceOne, DiceTwo, DiceThree, DiceFour, DiceFive, DiceSix } from './icon
 interface DiceProps {
     value: number;
     isRolling: boolean;
+    small?: boolean;
 }
 
 const diceFaceMap: { [key: number]: React.ComponentType<React.SVGProps<SVGSVGElement>> } = {
@@ -15,14 +16,14 @@ const diceFaceMap: { [key: number]: React.ComponentType<React.SVGProps<SVGSVGEle
     6: DiceSix,
 };
 
-export const Dice: React.FC<DiceProps> = ({ value, isRolling }) => {
+export const Dice: React.FC<DiceProps> = ({ value, isRolling, small = false }) => {
     const FaceComponent = diceFaceMap[value] || DiceOne;
     
-    // Using a more realistic tumble animation
-    const rollingClass = `animate-tumble`;
+    const animationClass = isRolling ? 'animate-tumble' : '';
+    const sizeClass = small ? 'w-8 h-8' : 'w-16 h-16';
 
     return (
-        <div className={`w-16 h-16 bg-white rounded-lg p-2 shadow-lg transition-all duration-500 ease-out ${isRolling ? rollingClass : ''}`}>
+        <div className={`${sizeClass} bg-white rounded-lg p-1 shadow-lg transition-all duration-500 ease-out ${animationClass}`}>
            <FaceComponent className="w-full h-full text-red-600" />
         </div>
     );
